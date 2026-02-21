@@ -11,6 +11,7 @@ import { Phone, MessageCircle, MapPin, Clock, Shield, DollarSign, Car, CheckCirc
 
 const Home = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [mapsApiReady, setMapsApiReady] = useState(false);
   const [bookingData, setBookingData] = useState({
     name: "",
     phone: "",
@@ -22,6 +23,8 @@ const Home = () => {
   });
   
   const intervalRef = useRef(null);
+  const pickupInputRef = useRef(null);
+  const dropInputRef = useRef(null);
 
   const heroSlides = [
     {
@@ -64,6 +67,66 @@ const Home = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const existingScript = document.getElementById("google-maps-script");
+
+    if (window.google?.maps?.places) {
+      setMapsApiReady(true);
+      return;
+    }
+
+    if (existingScript) {
+      const handleScriptLoad = () => setMapsApiReady(true);
+      existingScript.addEventListener("load", handleScriptLoad);
+      return () => existingScript.removeEventListener("load", handleScriptLoad);
+    }
+
+    const mapsScript = document.createElement("script");
+    const mapsApiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+    mapsScript.id = "google-maps-script";
+    mapsScript.async = true;
+    mapsScript.defer = true;
+    mapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places`;
+    mapsScript.onload = () => setMapsApiReady(true);
+    document.body.appendChild(mapsScript);
+
+    return () => {
+      mapsScript.onload = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapsApiReady || !pickupInputRef.current || !dropInputRef.current || !window.google?.maps?.places) {
+      return;
+    }
+
+    const autocompleteOptions = {
+      componentRestrictions: { country: "in" },
+      fields: ["formatted_address", "name"]
+    };
+
+    const pickupAutocomplete = new window.google.maps.places.Autocomplete(
+      pickupInputRef.current,
+      autocompleteOptions
+    );
+    const dropAutocomplete = new window.google.maps.places.Autocomplete(
+      dropInputRef.current,
+      autocompleteOptions
+    );
+
+    pickupAutocomplete.addListener("place_changed", () => {
+      const place = pickupAutocomplete.getPlace();
+      const pickupLocation = place.formatted_address || place.name || "";
+      setBookingData((prev) => ({ ...prev, pickup: pickupLocation }));
+    });
+
+    dropAutocomplete.addListener("place_changed", () => {
+      const place = dropAutocomplete.getPlace();
+      const dropLocation = place.formatted_address || place.name || "";
+      setBookingData((prev) => ({ ...prev, drop: dropLocation }));
+    });
+  }, [mapsApiReady]);
 
   const handleBooking = (e) => {
     e.preventDefault();
@@ -317,9 +380,10 @@ const Home = () => {
                         <Label htmlFor="pickup">Pickup Location</Label>
                         <Input
                           id="pickup"
+                          ref={pickupInputRef}
                           value={bookingData.pickup}
                           onChange={(e) => setBookingData({...bookingData, pickup: e.target.value})}
-                          placeholder="Enter pickup location"
+                          placeholder="Search pickup location on Google Maps"
                           required
                         />
                       </div>
@@ -327,13 +391,32 @@ const Home = () => {
                         <Label htmlFor="drop">Drop Location</Label>
                         <Input
                           id="drop"
+                          ref={dropInputRef}
                           value={bookingData.drop}
                           onChange={(e) => setBookingData({...bookingData, drop: e.target.value})}
-                          placeholder="Enter drop location"
+                          placeholder="Search drop location on Google Maps"
                           required
                         />
                       </div>
                     </div>
+
+                    {bookingData.pickup && bookingData.drop && (
+                      <div className="rounded-lg overflow-hidden border">
+                        <iframe
+                          title="Google Maps route preview"
+                          className="w-full h-64"
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          src={`https://www.google.com/maps/embed/v1/directions?key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(bookingData.pickup)}&destination=${encodeURIComponent(bookingData.drop)}`}
+                        ></iframe>
+                      </div>
+                    )}
+
+                    {!process.env.REACT_APP_GOOGLE_MAPS_API_KEY && (
+                      <p className="text-sm text-amber-600">
+                        Add <code>REACT_APP_GOOGLE_MAPS_API_KEY</code> in your environment to enable Google Maps suggestions and route preview.
+                      </p>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
